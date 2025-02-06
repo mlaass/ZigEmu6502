@@ -20,12 +20,14 @@ pub fn main() !void {
     const jump_addr_msb = 0x42;
     const data = 0x84;
 
+    // Program: JSR -> LDA -> BRK
     cpu.memory.data[initial_address] = @intFromEnum(OpCodes.JSR_ABS);
     cpu.memory.data[initial_address + 1] = jump_addr_lsb;
     cpu.memory.data[initial_address + 2] = jump_addr_msb;
     cpu.memory.data[jump_addr] = @intFromEnum(OpCodes.LDA_IM);
     cpu.memory.data[jump_addr + 1] = data;
+    cpu.memory.data[jump_addr + 2] = @intFromEnum(OpCodes.BRK); // Add BRK to end program
 
-    cpu.execute(9);
+    cpu.execute();
     cpu.print_internal_state();
 }

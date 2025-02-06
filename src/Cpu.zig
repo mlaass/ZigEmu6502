@@ -48,6 +48,12 @@ fn LDA_set_bits(self: *Self) void {
     self.bit_N = @as(u1, @truncate(self.reg_A & (1 << 7)));
 }
 
+/// Set the N and Z flags based on a value
+fn set_NZ_flags(self: *Self, value: u8) void {
+    self.bit_Z = @intFromBool(value == 0);
+    self.bit_N = @as(u1, @truncate(value & (1 << 7)));
+}
+
 pub fn print_internal_state(self: *Self) void {
     std.io.getStdOut().writer().print(
         "Carry={d} Zero={d} Interrupt={d} Decimal={d} Break={d} Overflow={d} Negative={d}\nAccumulator={d} X={d} Y={d}\n",
@@ -58,23 +64,23 @@ pub fn print_internal_state(self: *Self) void {
     ) catch unreachable;
 }
 
-pub fn execute(self: *Self, cycles: i32) void {
-    self.cycles = cycles;
-
-    while (self.cycles > 0) {
+pub fn execute(self: *Self) void {
+    while (true) {
         const op_code = self.memory.fetch_data(u8);
         switch (@as(OpCodes, @enumFromInt(op_code))) {
+            OpCodes.BRK => return, // Break/EOF opcode - terminate execution
+
             OpCodes.LDA_IM => {
                 const val = self.memory.fetch_data(u8);
                 self.reg_A = val;
-
                 self.LDA_set_bits();
+                continue;
             },
             OpCodes.LDA_ABS => {
                 const address = self.memory.fetch_data(u16);
                 self.reg_A = self.memory.read_data(u8, address);
-
                 self.LDA_set_bits();
+                continue;
             },
             OpCodes.LDA_ABS_X => {
                 var address = self.memory.fetch_data(u16);
@@ -85,6 +91,7 @@ pub fn execute(self: *Self, cycles: i32) void {
                 }
 
                 self.reg_A = self.memory.read_data(u8, address);
+                continue;
             },
             OpCodes.LDA_IND_X => {
                 var zero_page_addr = self.memory.fetch_data(u8);
@@ -95,6 +102,7 @@ pub fn execute(self: *Self, cycles: i32) void {
                 const effective_adddr = self.memory.read_data(u16, zero_page_addr);
 
                 self.reg_A = self.memory.read_data(u8, effective_adddr);
+                continue;
             },
             OpCodes.LDA_IND_Y => {
                 const zero_page_addr = self.memory.fetch_data(u8);
@@ -107,6 +115,7 @@ pub fn execute(self: *Self, cycles: i32) void {
                 }
 
                 self.reg_A = self.memory.read_data(u8, effective_addr);
+                continue;
             },
             OpCodes.LDA_ABS_Y => {
                 var address = self.memory.fetch_data(u16);
@@ -117,12 +126,13 @@ pub fn execute(self: *Self, cycles: i32) void {
                 }
 
                 self.reg_A = self.memory.read_data(u8, address);
+                continue;
             },
             OpCodes.LDA_ZP => {
                 const address = self.memory.fetch_data(u8);
                 self.reg_A = self.memory.read_data(u8, address);
-
                 self.LDA_set_bits();
+                continue;
             },
             OpCodes.LDA_ZP_X => {
                 var address = self.memory.fetch_data(u8);
@@ -130,20 +140,84 @@ pub fn execute(self: *Self, cycles: i32) void {
                 address &= 0xFF;
 
                 self.reg_A = self.memory.read_data(u8, address);
-
                 self.tick();
                 self.LDA_set_bits();
+                continue;
             },
             OpCodes.JSR_ABS => {
-                // Stack pointer needs to be incremented here.
                 const address = self.memory.fetch_data(u16);
                 self.memory.write_data(self.program_counter - 1, self.stack_pointer);
                 self.stack_pointer += 1;
                 self.program_counter = address;
+                continue;
             },
             OpCodes.NOP => {
                 self.program_counter += 1;
                 self.tick();
+                continue;
+            },
+            OpCodes.AND_IM => {
+                const value = self.memory.fetch_data(u8);
+                self.reg_A &= value;
+                self.set_NZ_flags(self.reg_A);
+                continue;
+            },
+            OpCodes.AND_ZP => {
+                const addr = self.memory.fetch_data(u8);
+                self.reg_A &= self.memory.read_data(u8, addr);
+                self.set_NZ_flags(self.reg_A);
+                continue;
+            },
+            OpCodes.AND_ZP_X => {
+                var addr = self.memory.fetch_data(u8);
+                addr +%= self.reg_X;
+                addr &= 0xFF;
+                self.reg_A &= self.memory.read_data(u8, addr);
+                self.tick();
+                self.set_NZ_flags(self.reg_A);
+                continue;
+            },
+            OpCodes.ORA_IM => {
+                const value = self.memory.fetch_data(u8);
+                self.reg_A |= value;
+                self.set_NZ_flags(self.reg_A);
+                continue;
+            },
+            OpCodes.ORA_ZP => {
+                const addr = self.memory.fetch_data(u8);
+                self.reg_A |= self.memory.read_data(u8, addr);
+                self.set_NZ_flags(self.reg_A);
+                continue;
+            },
+            OpCodes.ORA_ZP_X => {
+                var addr = self.memory.fetch_data(u8);
+                addr +%= self.reg_X;
+                addr &= 0xFF;
+                self.reg_A |= self.memory.read_data(u8, addr);
+                self.tick();
+                self.set_NZ_flags(self.reg_A);
+                continue;
+            },
+            OpCodes.EOR_IM => {
+                const value = self.memory.fetch_data(u8);
+                self.reg_A ^= value;
+                self.set_NZ_flags(self.reg_A);
+                continue;
+            },
+            OpCodes.EOR_ZP => {
+                const addr = self.memory.fetch_data(u8);
+                self.reg_A ^= self.memory.read_data(u8, addr);
+                self.set_NZ_flags(self.reg_A);
+                continue;
+            },
+            OpCodes.EOR_ZP_X => {
+                var addr = self.memory.fetch_data(u8);
+                addr +%= self.reg_X;
+                addr &= 0xFF;
+                self.reg_A ^= self.memory.read_data(u8, addr);
+                self.tick();
+                self.set_NZ_flags(self.reg_A);
+                continue;
             },
             else => {
                 @panic("Opcode not handled");
